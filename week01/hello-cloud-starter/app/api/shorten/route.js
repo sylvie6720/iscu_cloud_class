@@ -4,6 +4,11 @@ import { saveUrl } from "../../../lib/db";
 
 export const runtime = "nodejs";
 
+// "My-App.vercel.app."처럼 끝에 점이 붙은 FQDN 표기도 같은 호스트로 본다.
+function normalizeHostname(hostname) {
+  return hostname.toLowerCase().replace(/\.+$/, "");
+}
+
 const MAX_URL_LENGTH = 2048;
 
 const ALPHABET =
@@ -146,32 +151,56 @@ export async function POST(request) {
 
 
     /*
-     * 6. Short URL 생성
+     * 6. 자기 서비스 URL 차단
      *
-     * 모든 검사를 통과했으므로
-     * shortCode와 shortUrl을 생성합니다.
+     * 이 서비스의 주소를 다시 단축하면 단축 URL이 자기 자신을 가리키는
+     * 리다이렉트 고리가 생길 수 있으므로 거부합니다.
+     * 배포 주소를 코드에 고정하지 않고 요청이 들어온 호스트와 비교해야
+     * Production URL과 Deployment URL 어느 쪽으로 접속해도 똑같이 동작합니다.
+     * 프로토콜(http/https)과 포트는 무시하고 호스트 이름만 비교합니다.
      */
-    const shortCode = createShortCode(originalUrl);
-    await saveUrl(shortCode, originalUrl);
     const baseUrl = new URL(request.url).origin;
+    const serviceHostname = normalizeHostname(new URL(request.url).hostname);
+
+    if (normalizeHostname(parsedUrl.hostname) === serviceHostname) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "SELF_URL_NOT_ALLOWED",
+            message: "URLs of this service cannot be shortened.",
+          },
+        },
+        { status: 400 }
+      );
+    }
 
 
     /*
-     * URL 생성 성공
+     * 7. Short URL 생성과 저장
+     *
+     * 같은 originalUrl이 이미 저장되어 있으면 기존 shortCode를 그대로 반환합니다.
+     * 새로 저장한 경우에만 201 Created, 기존 매핑을 돌려준 경우는 200 OK입니다.
      */
+    const { shortCode, created } = await saveUrl(
+      createShortCode(originalUrl),
+      originalUrl
+    );
+
     return NextResponse.json(
       {
         shortCode,
         shortUrl: `${baseUrl}/${shortCode}`,
         originalUrl,
       },
-      { status: 201 }
+      { status: created ? 201 : 200 }
     );
 
-  } catch {
+  } catch (error) {
+    // 원본 URL에는 민감한 쿼리 파라미터가 있을 수 있어 로그에 남기지 않는다(6주차 로그 원칙).
+    console.error("Failed to create short URL", error);
 
     /*
-     * 7. 서버 내부 오류
+     * 8. 서버 내부 오류
      *
      * 예상하지 못한 오류가 발생한 경우입니다.
      */
