@@ -1,8 +1,8 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "Hello Cloud",
-  description: "My first cloud deployment",
+  title: "URL Shortener | Week 02",
+  description: "URL 입력값 검증 실습",
 };
 
 export default function RootLayout({ children }) {
