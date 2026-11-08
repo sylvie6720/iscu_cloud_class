@@ -7,6 +7,8 @@ export async function GET(request, { params }) {
   const originalUrl = await findUrlByShortCode(shortCode);
 
   if (!originalUrl) {
+    console.warn("Short URL not found", { shortCode });
+
     return new Response("Not Found", {
       status: 404,
       headers: {
